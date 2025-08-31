@@ -19,16 +19,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: sudoghut/trends-story
-          token: ${{ secrets.access_all_repo }}  # or your custom token
+          token: ${{ secrets.access_all_repo }}
           path: target
 
       - name: Copy the database file
         run: |
           cp source/trends_data.db target/trends_data.db
 
-      - name: Commit the new database file
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Updated trends_data.db"
-          branch: main
-          repository: ./target  # Specify the repository path
+      - name: Commit and push changes
+        run: |
+          cd target
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add trends_data.db
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Updated trends_data.db"
+            git push
+          fi
