@@ -1,40 +1,33 @@
-name: Download trends_data.db
+name: Sync trends_data.db
 
 on:
   push:
+    branches:
+      - main  # Or the branch you want to trigger this on
     paths:
       - 'trends_data.db'
   workflow_dispatch:
 
 jobs:
-  download-db:
+  sync-db:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout your repository (the target)
+        uses: actions/checkout@v4
+
       - name: Checkout source repository (to get trends_data.db)
         uses: actions/checkout@v4
         with:
-          path: source
-
-      - name: Checkout target repository
-        uses: actions/checkout@v4
-        with:
           repository: sudoghut/trends-story
-          token: ${{ secrets.access_all_repo }}
-          path: target
+          token: ${{ secrets.access_all_repo }} # Make sure this is the correct secret name
+          path: trends-story-source
 
       - name: Copy the database file
         run: |
-          cp source/trends_data.db target/trends_data.db
+          cp trends-story-source/trends_data.db .
 
-      - name: Commit and push changes
-        run: |
-          cd target
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add trends_data.db
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Updated trends_data.db"
-            git push
-          fi
+      - name: Commit the new database file
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Updated trends_data.db"
+          branch: main
