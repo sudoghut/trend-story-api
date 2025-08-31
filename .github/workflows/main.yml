@@ -23,12 +23,12 @@ jobs:
         with:
           repository: sudoghut/trends-story
           token: ${{ secrets.ACCESS_ALL_REPO }}  # Your PAT with repo access
-          path: trends-story-source
+          path: trends-story
           
       - name: Copy the database file
         run: |
           echo "Copying trends_data.db from source repository..."
-          cp trends-story-source/trends_data.db .
+          cp trends-story/trends_data.db .
           echo "File copied successfully"
           
       - name: Check if file changed
