@@ -1,68 +1,27 @@
-name: Sync Trends Database
+name: Download trends_data.db
 
 on:
-  schedule:
-    # Run every 30 minutes
-    - cron: '*/30 * * * *'
-  workflow_dispatch: # Allow manual triggering
+  push:
+    paths:
+      - 'trends_data.db'
+  workflow_dispatch:
 
 jobs:
-  sync-database:
+  download-db:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GH_TOKEN }}
+      - name: Checkout the target repository
+        uses: actions/checkout@v4
+        with:
+          repository: sudoghut/trends-story
+          token: ${{ secrets.GH_TOKEN }}
 
-    - name: Get current file hash if exists
-      id: current-hash
-      run: |
-        if [ -f "trends_data.db" ]; then
-          echo "current=$(sha256sum trends_data.db | cut -d' ' -f1)" >> $GITHUB_OUTPUT
-        else
-          echo "current=" >> $GITHUB_OUTPUT
-        fi
+      - name: Copy the database file
+        run: |
+          cp trends_data.db ${{ github.workspace }}
 
-    - name: Download trends database
-      run: |
-        echo "Downloading trends_data.db..."
-        curl -f -L -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-          -o "temp_trends_data.db" \
-          "https://github.com/sudoghut/trend-story-api/raw/refs/heads/main/trends_data.db"
-        
-        if [ $? -eq 0 ] && [ -s "temp_trends_data.db" ]; then
-          echo "✅ Successfully downloaded trends_data.db"
-          echo "File size: $(ls -lh temp_trends_data.db | awk '{print $5}')"
-        else
-          echo "❌ Failed to download trends_data.db or file is empty"
-          exit 1
-        fi
-
-    - name: Check if file changed and update
-      id: check-update
-      run: |
-        REMOTE_HASH=$(sha256sum temp_trends_data.db | cut -d' ' -f1)
-        echo "Remote file hash: $REMOTE_HASH"
-        echo "Current file hash: ${{ steps.current-hash.outputs.current }}"
-        
-        if [ "${{ steps.current-hash.outputs.current }}" != "$REMOTE_HASH" ]; then
-          echo "File has changed, updating..."
-          mv temp_trends_data.db trends_data.db
-          echo "changed=true" >> $GITHUB_OUTPUT
-        else
-          echo "File hasn't changed, skipping update"
-          rm -f temp_trends_data.db
-          echo "changed=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Commit and push if changed
-      if: steps.check-update.outputs.changed == 'true'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add trends_data.db
-        git commit -m "Update trends_data.db from sudoghut/trend-story-api ($(date +'%Y-%m-%d %H:%M:%S'))"
-        git push
-        echo "✅ Database updated and pushed"
+      - name: Commit the new database file
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Updated trends_data.db"
+          branch: main
