@@ -10,18 +10,25 @@ jobs:
   download-db:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout the target repository
+      - name: Checkout source repository (to get trends_data.db)
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Checkout target repository
         uses: actions/checkout@v4
         with:
           repository: sudoghut/trends-story
-          token: ${{ secrets.access-all-repo }}
+          token: ${{ secrets.GITHUB_TOKEN }}  # or your custom token
+          path: target
 
       - name: Copy the database file
         run: |
-          cp trends_data.db ${{ github.workspace }}
+          cp source/trends_data.db target/trends_data.db
 
       - name: Commit the new database file
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Updated trends_data.db"
           branch: main
+          repository: ./target  # Specify the repository path
