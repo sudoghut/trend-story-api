@@ -28,7 +28,7 @@ jobs:
       - name: Copy the database file
         run: |
           echo "Copying trends_data.db from source repository..."
-          cp trends-story/trends_data.db .
+          cp trends-story-source/trends_data.db .
           echo "File copied successfully"
           
       - name: Check if file changed
