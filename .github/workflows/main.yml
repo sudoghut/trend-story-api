@@ -1,52 +1,38 @@
 name: Sync trends_data.db
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'trends_data.db'
-  workflow_dispatch:
+  repository_dispatch:
+    types: [sync-db] # This listens for the event from the other workflow
+  workflow_dispatch: # This allows you to still run it manually
 
 jobs:
   sync-db:
     runs-on: ubuntu-latest
-    
     steps:
-      # 1. Checkout the target repository.
       - name: Checkout current repository (target)
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.ACCESS_ALL_REPO }}
           
-      # 2. Checkout the source repository into a local directory named 'source-repo'.
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
           repository: sudoghut/trends-story
           token: ${{ secrets.ACCESS_ALL_REPO }}
-          path: source-repo # We will use this name consistently.
+          path: source-repo
           
-      # 3. Overwrite the local trends_data.db with the one from the source.
       - name: Copy database file from source
-        run: |
-          echo "Copying trends_data.db from source-repo..."
-          cp source-repo/trends_data.db .
-          echo "File copied successfully."
+        run: cp source-repo/trends_data.db .
           
-      # 4. Check if overwriting the file resulted in a change.
       - name: Check for changes
         id: check_changes
         run: |
           if git diff --quiet trends_data.db; then
-            echo "No changes detected in trends_data.db."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            echo "Changes detected in trends_data.db."
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
           
-      # 5. If a change was detected, commit and push.
       - name: Commit and push if changed
         if: steps.check_changes.outputs.changed == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
