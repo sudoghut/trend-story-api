@@ -16,13 +16,13 @@ jobs:
       - name: Checkout current repository (target)
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.access_all_repo }}  # Default token for the current repo
+          token: ${{ secrets.ACCESS_ALL_REPO }}  # Default token for the current repo
           
       - name: Checkout source repository (trends-story)
         uses: actions/checkout@v4
         with:
           repository: sudoghut/trends-story
-          token: ${{ secrets.access_all_repo }}  # Your PAT with repo access
+          token: ${{ secrets.ACCESS_ALL_REPO }}  # Your PAT with repo access
           path: trends-story-source
           
       - name: Copy the database file
