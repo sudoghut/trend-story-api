@@ -129,12 +129,12 @@ async fn main() {
         .with(cors)
         .recover(handle_rejection);
 
-    println!("Starting Trend Story API server on http://localhost:3030");
+    println!("Starting Trend Story API server on http://localhost:3003");
     println!("Available endpoints:");
     println!("  GET /latest - Get all news records from the latest date with keywords");
 
     warp::serve(routes)
-        .run(([127, 0, 0, 1], 3030))
+        .run(([127, 0, 0, 1], 3003))
         .await;
 }
 
