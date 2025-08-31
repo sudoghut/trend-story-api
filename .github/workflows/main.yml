@@ -1,32 +1,51 @@
 name: Sync trends_data.db
+
 on:
   push:
     branches:
       - main  # Or the branch you want to trigger this on
     paths:
       - 'trends_data.db'
-  workflow_dispatch:
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   sync-db:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout your repository (the target)
+      - name: Checkout current repository (target)
         uses: actions/checkout@v4
-        
-      - name: Checkout source repository (to get trends_data.db)
+        with:
+          token: ${{ secrets.access_all_repo }}  # Default token for the current repo
+          
+      - name: Checkout source repository (trends-story)
         uses: actions/checkout@v4
         with:
           repository: sudoghut/trends-story
-          token: ${{ secrets.access_all_repo }}  # Make sure this matches your secret name
+          token: ${{ secrets.access_all_repo }}  # Your PAT with repo access
           path: trends-story-source
           
       - name: Copy the database file
         run: |
+          echo "Copying trends_data.db from source repository..."
           cp trends-story-source/trends_data.db .
+          echo "File copied successfully"
           
-      - name: Commit the new database file
+      - name: Check if file changed
+        id: check_changes
+        run: |
+          if git diff --quiet trends_data.db; then
+            echo "No changes detected in trends_data.db"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected in trends_data.db"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Commit and push if changed
+        if: steps.check_changes.outputs.changed == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Updated trends_data.db"
+          commit_message: "Updated trends_data.db from trends-story repository"
+          file_pattern: trends_data.db
           branch: main
