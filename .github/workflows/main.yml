@@ -1,5 +1,4 @@
 name: Sync trends_data.db
-
 on:
   push:
     branches:
@@ -14,18 +13,18 @@ jobs:
     steps:
       - name: Checkout your repository (the target)
         uses: actions/checkout@v4
-
+        
       - name: Checkout source repository (to get trends_data.db)
         uses: actions/checkout@v4
         with:
           repository: sudoghut/trends-story
-          token: ${{ secrets.access_all_repo }} # Make sure this is the correct secret name
+          token: ${{ secrets.access_all_repo }}  # Make sure this matches your secret name
           path: trends-story-source
-
+          
       - name: Copy the database file
         run: |
           cp trends-story-source/trends_data.db .
-
+          
       - name: Commit the new database file
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
