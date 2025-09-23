@@ -28,6 +28,7 @@ struct NewsRecord {
     image_id: Option<i64>,
     keywords: Option<String>,
     image: Option<ImageInfo>,
+    tag: Vec<String>,
 }
 
 async fn get_latest() -> Result<impl warp::Reply, warp::Rejection> {
@@ -123,6 +124,40 @@ fn query_latest_news() -> SqlResult<LatestResponse> {
             None
         };
 
+        // Query categories from serpapi_data if serpapi_id exists
+        let tag = if let Some(serpapi_id) = serpapi_id {
+            let mut cat_stmt = conn.prepare(
+                "SELECT categories FROM serpapi_data WHERE id = ?1"
+            )?;
+            let categories: Option<String> = cat_stmt.query_row([serpapi_id], |row| row.get(0)).unwrap_or(None);
+            if let Some(cat_str) = categories {
+                if cat_str.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    let mut seen = std::collections::HashSet::new();
+                    cat_str.split('|')
+                        .filter_map(|token| {
+                            let parts: Vec<&str> = token.splitn(2, '-').collect();
+                            if parts.len() == 2 {
+                                let val = parts[1].trim();
+                                if !val.is_empty() && seen.insert(val.to_string()) {
+                                    Some(val.to_string())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<String>>()
+                }
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
         records.push(NewsRecord {
             id,
             news,
@@ -131,6 +166,7 @@ fn query_latest_news() -> SqlResult<LatestResponse> {
             image_id,
             keywords,
             image,
+            tag,
         });
     }
     
