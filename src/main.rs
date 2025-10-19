@@ -1,5 +1,6 @@
 // Immutable Config
 const DOMAIN: &str = "https://trending.oopus.info";
+const DOMAIN_API: &str = "https://trend-story-api.oopus.info";
 const SYNC_INTERVAL_MINUTES: u64 = 20; // User-configurable
 
 use std::path::Path;
@@ -207,9 +208,9 @@ fn query_latest_news() -> SqlResult<LatestResponse> {
             let url = file_name.as_ref().map(|fname| {
                 let tokens: Vec<&str> = fname.split('_').collect();
                 if tokens.len() > 1 {
-                    format!("{}/images/{}/{}", DOMAIN, tokens[1], fname)
+                    format!("{}/images/{}/{}", DOMAIN_API, tokens[1], fname)
                 } else {
-                    format!("{}/images/{}", DOMAIN, fname)
+                    format!("{}/images/{}", DOMAIN_API, fname)
                 }
             });
             Some(ImageInfo { file_name, url })
@@ -326,9 +327,9 @@ fn query_news_by_date(target_date: &str) -> SqlResult<LatestResponse> {
             let url = file_name.as_ref().map(|fname| {
                 let tokens: Vec<&str> = fname.split('_').collect();
                 if tokens.len() > 1 {
-                    format!("{}/images/{}/{}", DOMAIN, tokens[1], fname)
+                    format!("{}/images/{}/{}", DOMAIN_API, tokens[1], fname)
                 } else {
-                    format!("{}/images/{}", DOMAIN, fname)
+                    format!("{}/images/{}", DOMAIN_API, fname)
                 }
             });
             Some(ImageInfo { file_name, url })
