@@ -1,5 +1,5 @@
 // Immutable Config
-const DOMAIN: &str = "https://trend-story-api.oopus.info";
+const DOMAIN: &str = "https://trending.oopus.info";
 const SYNC_INTERVAL_MINUTES: u64 = 20; // User-configurable
 
 use std::path::Path;
@@ -11,6 +11,12 @@ use warp::Filter;
 struct LatestResponse {
     date: Option<String>,
     records: Vec<NewsRecord>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DateResponse {
+    date: String,
+    date_with_url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,6 +74,64 @@ async fn get_date(date_param: String) -> Result<impl warp::Reply, warp::Rejectio
             Err(warp::reject::custom(DatabaseError))
         }
     }
+}
+
+async fn get_dates() -> Result<impl warp::Reply, warp::Rejection> {
+    match query_all_dates() {
+        Ok(dates) => Ok(warp::reply::json(&dates)),
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            Err(warp::reject::custom(DatabaseError))
+        }
+    }
+}
+
+fn query_all_dates() -> SqlResult<Vec<DateResponse>> {
+    let db_path = "trends-story/trends_data.db";
+    
+    if !Path::new(db_path).exists() {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+            Some("Database file not found".to_string())
+        ));
+    }
+
+    let conn = Connection::open(db_path)?;
+    
+    // Query unique dates from main_news_data, extract yyyymmdd format, and sort by id
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT REPLACE(substr(date, 1, 10), '-', '') as date_formatted \
+         FROM main_news_data \
+         ORDER BY id ASC"
+    )?;
+
+    let date_rows = stmt.query_map([], |row| {
+        let date: String = row.get(0)?;
+        Ok(date)
+    })?;
+    
+    let mut dates = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    
+    for row_result in date_rows {
+        let date_formatted = row_result?;
+        
+        // Only add unique dates
+        if seen.insert(date_formatted.clone()) {
+            let date_with_url = format!(
+                "{}/date/{}",
+                DOMAIN,
+                date_formatted
+            );
+            
+            dates.push(DateResponse {
+                date: date_formatted,
+                date_with_url,
+            });
+        }
+    }
+    
+    Ok(dates)
 }
 
 fn query_latest_news() -> SqlResult<LatestResponse> {
@@ -371,6 +435,10 @@ async fn main() {
         .and(warp::get())
         .and_then(get_latest);
 
+    let dates = warp::path("dates")
+        .and(warp::get())
+        .and_then(get_dates);
+
     let date = warp::path("date")
         .and(warp::path::param::<String>())
         .and(warp::get())
@@ -381,6 +449,7 @@ async fn main() {
         .and(warp::fs::dir("trends-story/images"));
 
     let routes = latest
+        .or(dates)
         .or(date)
         .or(images)
         .with(cors)
@@ -389,6 +458,7 @@ async fn main() {
     println!("Starting Trend Story API server on http://localhost:3003");
     println!("Available endpoints:");
     println!("  GET /latest - Get all news records from the latest date with keywords");
+    println!("  GET /dates - Get all available dates in yyyymmdd format");
     println!("  GET /date/<yyyymmdd> - Get all news records from a specific date");
     println!("  GET /images/* - Serve images from trends-story/images");
 
