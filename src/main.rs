@@ -208,7 +208,17 @@ fn query_latest_news() -> SqlResult<LatestResponse> {
             let url = file_name.as_ref().map(|fname| {
                 let tokens: Vec<&str> = fname.split('_').collect();
                 if tokens.len() > 1 {
-                    format!("{}/images/{}/{}", DOMAIN_API, tokens[1], fname)
+                    let date_str = tokens[1];
+                    // Convert yyyymmdd to yyyy/mm/dd
+                    if date_str.len() == 8 {
+                        let year = &date_str[0..4];
+                        let month = &date_str[4..6];
+                        let day = &date_str[6..8];
+                        format!("{}/images/{}/{}/{}/{}", DOMAIN_API, year, month, day, fname)
+                    } else {
+                        // Fallback for unexpected format
+                        format!("{}/images/{}/{}", DOMAIN_API, date_str, fname)
+                    }
                 } else {
                     format!("{}/images/{}", DOMAIN_API, fname)
                 }
@@ -327,7 +337,17 @@ fn query_news_by_date(target_date: &str) -> SqlResult<LatestResponse> {
             let url = file_name.as_ref().map(|fname| {
                 let tokens: Vec<&str> = fname.split('_').collect();
                 if tokens.len() > 1 {
-                    format!("{}/images/{}/{}", DOMAIN_API, tokens[1], fname)
+                    let date_str = tokens[1];
+                    // Convert yyyymmdd to yyyy/mm/dd
+                    if date_str.len() == 8 {
+                        let year = &date_str[0..4];
+                        let month = &date_str[4..6];
+                        let day = &date_str[6..8];
+                        format!("{}/images/{}/{}/{}/{}", DOMAIN_API, year, month, day, fname)
+                    } else {
+                        // Fallback for unexpected format
+                        format!("{}/images/{}/{}", DOMAIN_API, date_str, fname)
+                    }
                 } else {
                     format!("{}/images/{}", DOMAIN_API, fname)
                 }
@@ -456,7 +476,9 @@ async fn main() {
         .with(cors)
         .recover(handle_rejection);
 
-    println!("Starting Trend Story API server on http://localhost:3003");
+    const PORT: u16 = 3003;
+    
+    println!("Starting Trend Story API server on http://localhost:{}", PORT);
     println!("Available endpoints:");
     println!("  GET /latest - Get all news records from the latest date with keywords");
     println!("  GET /dates - Get all available dates in yyyymmdd format");
@@ -464,7 +486,7 @@ async fn main() {
     println!("  GET /images/* - Serve images from trends-story/images");
 
     warp::serve(routes)
-        .run(([127, 0, 0, 1], 3003))
+        .run(([127, 0, 0, 1], PORT))
         .await;
 }
 
