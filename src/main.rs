@@ -33,6 +33,7 @@ struct NewsRecord {
     date: Option<String>,
     serpapi_id: Option<i64>,
     image_id: Option<i64>,
+    serpapi_data_date: Option<String>,
     keywords: Option<String>,
     image: Option<ImageInfo>,
     tag: Vec<String>,
@@ -165,10 +166,14 @@ fn query_latest_news() -> SqlResult<LatestResponse> {
 
     // Query all records from the latest day
     let mut stmt = conn.prepare(
-        "SELECT id, news, date, serpapi_id, image_id \
+        "SELECT main_news_data.id, main_news_data.news, main_news_data.date, \
+         main_news_data.serpapi_id, main_news_data.image_id, \
+         serpapi_data.date AS serpapi_data_date \
          FROM main_news_data \
-         WHERE substr(date, 1, 10) = ?1 \
-         ORDER BY id ASC"
+         LEFT JOIN serpapi_data \
+         ON main_news_data.serpapi_id = serpapi_data.id \
+         WHERE substr(main_news_data.date, 1, 10) = ?1 \
+         ORDER BY main_news_data.id ASC"
     )?;
 
     let news_rows = stmt.query_map([&day_filter], |row| {
@@ -178,13 +183,14 @@ fn query_latest_news() -> SqlResult<LatestResponse> {
             row.get::<_, Option<String>>(2)?,  // date
             row.get::<_, Option<i64>>(3)?,     // serpapi_id
             row.get::<_, Option<i64>>(4)?,     // image_id
+            row.get::<_, Option<String>>(5)?,  // serpapi_data_date
         ))
     })?;
     
     let mut records = Vec::new();
     
     for row_result in news_rows {
-        let (id, news, date, serpapi_id, image_id) = row_result?;
+        let (id, news, date, serpapi_id, image_id, serpapi_data_date) = row_result?;
 
         // Query keywords from serpapi_data if serpapi_id exists
         let keywords = if let Some(serpapi_id) = serpapi_id {
@@ -268,6 +274,7 @@ fn query_latest_news() -> SqlResult<LatestResponse> {
             date,
             serpapi_id,
             image_id,
+            serpapi_data_date,
             keywords,
             image,
             tag,
@@ -293,12 +300,16 @@ fn query_news_by_date(target_date: &str) -> SqlResult<LatestResponse> {
     let conn = Connection::open(db_path)?;
     
     // Query all records from the specified date
-    let mut stmt = conn.prepare(
-        "SELECT id, news, date, serpapi_id, image_id \
-         FROM main_news_data \
-         WHERE substr(date, 1, 10) = ?1 \
-         ORDER BY id ASC"
-    )?;
+let mut stmt = conn.prepare(
+    "SELECT main_news_data.id, main_news_data.news, main_news_data.date, \
+     main_news_data.serpapi_id, main_news_data.image_id, \
+     serpapi_data.date AS serpapi_data_date \
+     FROM main_news_data \
+     LEFT JOIN serpapi_data \
+     ON main_news_data.serpapi_id = serpapi_data.id \
+     WHERE substr(main_news_data.date, 1, 10) = ?1 \
+     ORDER BY main_news_data.id ASC"
+)?;
 
     let news_rows = stmt.query_map([target_date], |row| {
         Ok((
@@ -307,13 +318,14 @@ fn query_news_by_date(target_date: &str) -> SqlResult<LatestResponse> {
             row.get::<_, Option<String>>(2)?,  // date
             row.get::<_, Option<i64>>(3)?,     // serpapi_id
             row.get::<_, Option<i64>>(4)?,     // image_id
+            row.get::<_, Option<String>>(5)?,  // serpapi_data_date
         ))
     })?;
     
     let mut records = Vec::new();
     
     for row_result in news_rows {
-        let (id, news, date, serpapi_id, image_id) = row_result?;
+        let (id, news, date, serpapi_id, image_id, serpapi_data_date) = row_result?;
 
         // Query keywords from serpapi_data if serpapi_id exists
         let keywords = if let Some(serpapi_id) = serpapi_id {
@@ -397,6 +409,7 @@ fn query_news_by_date(target_date: &str) -> SqlResult<LatestResponse> {
             date,
             serpapi_id,
             image_id,
+            serpapi_data_date,
             keywords,
             image,
             tag,
