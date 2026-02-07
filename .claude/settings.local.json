@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(cmd.exe /c \"del c:\\\\Users\\\\sudos\\\\OneDrive\\\\document\\\\GitHub\\\\trend-story-api\\\\.github\\\\workflows\\\\main.yml\")",
+      "Bash(cmd.exe:*)"
+    ]
+  }
+}

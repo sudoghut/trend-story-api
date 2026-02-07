@@ -1,7 +1,6 @@
 // Immutable Config
 const DOMAIN: &str = "https://trending.oopus.info";
 const DOMAIN_API: &str = "https://trend-story-api.oopus.info";
-const SYNC_INTERVAL_MINUTES: u64 = 20; // User-configurable
 
 use std::path::Path;
 use rusqlite::{Connection, Result as SqlResult};
@@ -89,7 +88,7 @@ async fn get_dates() -> Result<impl warp::Reply, warp::Rejection> {
 }
 
 fn query_all_dates() -> SqlResult<Vec<DateResponse>> {
-    let db_path = "trends-story/trends_data.db";
+    let db_path = "../trends-story/trends_data.db";
     
     if !Path::new(db_path).exists() {
         return Err(rusqlite::Error::SqliteFailure(
@@ -137,7 +136,7 @@ fn query_all_dates() -> SqlResult<Vec<DateResponse>> {
 }
 
 fn query_latest_news() -> SqlResult<LatestResponse> {
-    let db_path = "trends-story/trends_data.db";
+    let db_path = "../trends-story/trends_data.db";
     
     if !Path::new(db_path).exists() {
         return Err(rusqlite::Error::SqliteFailure(
@@ -288,7 +287,7 @@ fn query_latest_news() -> SqlResult<LatestResponse> {
 }
 
 fn query_news_by_date(target_date: &str) -> SqlResult<LatestResponse> {
-    let db_path = "trends-story/trends_data.db";
+    let db_path = "../trends-story/trends_data.db";
     
     if !Path::new(db_path).exists() {
         return Err(rusqlite::Error::SqliteFailure(
@@ -439,28 +438,6 @@ impl warp::reject::Reject for NoDataFound {}
 
 #[tokio::main]
 async fn main() {
-    // Start periodic git sync task
-    tokio::spawn(async move {
-        use std::process::Command;
-        use std::time::Duration;
-        loop {
-            // If repo doesn't exist, clone; else, pull
-            let repo_path = "./trends-story";
-            if !std::path::Path::new(repo_path).exists() {
-                let _ = Command::new("git")
-                    .args(["clone", "--depth", "1", "https://github.com/sudoghut/trends-story"])
-                    .status();
-            } else {
-                let _ = Command::new("git")
-                    .args(["-C", repo_path, "fetch", "--depth", "1"])
-                    .status();
-                let _ = Command::new("git")
-                    .args(["-C", repo_path, "reset", "--hard", "origin/main"])
-                    .status();
-            }
-            tokio::time::sleep(Duration::from_secs(SYNC_INTERVAL_MINUTES * 60)).await;
-        }
-    });
     // CORS filter
     let cors = warp::cors()
         .allow_any_origin()
@@ -481,9 +458,9 @@ async fn main() {
         .and(warp::get())
         .and_then(get_date);
 
-    // Serve images from ./trends-story/images via /images route
+    // Serve images from ../trends-story/images via /images route
     let images = warp::path("images")
-        .and(warp::fs::dir("trends-story/images"));
+        .and(warp::fs::dir("../trends-story/images"));
 
     let routes = latest
         .or(dates)
@@ -499,7 +476,7 @@ async fn main() {
     println!("  GET /latest - Get all news records from the latest date with keywords");
     println!("  GET /dates - Get all available dates in yyyymmdd format");
     println!("  GET /date/<yyyymmdd> - Get all news records from a specific date");
-    println!("  GET /images/* - Serve images from trends-story/images");
+    println!("  GET /images/* - Serve images from ../trends-story/images");
 
     warp::serve(routes)
         .run(([127, 0, 0, 1], PORT))
