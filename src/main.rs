@@ -448,11 +448,14 @@ async fn main() {
             let repo_path = "./trends-story";
             if !std::path::Path::new(repo_path).exists() {
                 let _ = Command::new("git")
-                    .args(["clone", "https://github.com/sudoghut/trends-story"])
+                    .args(["clone", "--depth", "1", "https://github.com/sudoghut/trends-story"])
                     .status();
             } else {
                 let _ = Command::new("git")
-                    .args(["-C", repo_path, "pull"])
+                    .args(["-C", repo_path, "fetch", "--depth", "1"])
+                    .status();
+                let _ = Command::new("git")
+                    .args(["-C", repo_path, "reset", "--hard", "origin/main"])
                     .status();
             }
             tokio::time::sleep(Duration::from_secs(SYNC_INTERVAL_MINUTES * 60)).await;

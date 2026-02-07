@@ -14,12 +14,13 @@ jobs:
         with:
           token: ${{ secrets.ACCESS_ALL_REPO }}
           
-      - name: Checkout source repository
+      - name: Checkout source repository (shallow clone)
         uses: actions/checkout@v4
         with:
           repository: sudoghut/trends-story
           token: ${{ secrets.ACCESS_ALL_REPO }}
           path: source-repo
+          fetch-depth: 1
           
       - name: Copy database file from source
         run: cp source-repo/trends_data.db .
@@ -33,10 +34,13 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
           
-      - name: Commit and push if changed
+      - name: Commit and force push if changed (keep only latest commit)
         if: steps.check_changes.outputs.changed == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Sync: Update trends_data.db from trends-story repository"
-          file_pattern: trends_data.db
-          branch: main
+        run: |
+          chmod +x trend-story-api
+          git checkout --orphan temp-branch
+          git add -A
+          git commit -m "Sync: Update trends_data.db from trends-story repository"
+          git branch -D main
+          git branch -m main
+          git push --force origin main
