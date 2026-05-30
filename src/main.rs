@@ -77,6 +77,25 @@ async fn get_date(date_param: String) -> Result<impl warp::Reply, warp::Rejectio
     }
 }
 
+async fn get_sitemap() -> Result<impl warp::Reply, warp::Rejection> {
+    // spawn_blocking: query_sitemap_data 是同步阻塞 DB 操作，不能直接在 async 上下文执行
+    match tokio::task::spawn_blocking(query_sitemap_data).await {
+        Ok(Ok(xml)) => Ok(warp::reply::with_header(
+            warp::reply::with_header(xml, "content-type", "application/xml; charset=utf-8"),
+            "cache-control",
+            "public, max-age=86400",
+        )),
+        Ok(Err(e)) => {
+            eprintln!("Sitemap database error: {}", e);
+            Err(warp::reject::custom(DatabaseError))
+        }
+        Err(e) => {
+            eprintln!("Sitemap spawn_blocking error: {}", e);
+            Err(warp::reject::custom(DatabaseError))
+        }
+    }
+}
+
 async fn get_dates() -> Result<impl warp::Reply, warp::Rejection> {
     match query_all_dates() {
         Ok(dates) => Ok(warp::reply::json(&dates)),
@@ -85,6 +104,70 @@ async fn get_dates() -> Result<impl warp::Reply, warp::Rejection> {
             Err(warp::reject::custom(DatabaseError))
         }
     }
+}
+
+fn query_sitemap_data() -> SqlResult<String> {
+    let db_path = "../trends-story/trends_data.db";
+
+    if !Path::new(db_path).exists() {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+            Some("Database file not found".to_string()),
+        ));
+    }
+
+    let conn = Connection::open(db_path)?;
+
+    // Single query: id + yyyymmdd + lastmod for every article that has content
+    let mut stmt = conn.prepare(
+        "SELECT id, \
+                REPLACE(substr(date, 1, 10), '-', '') AS yyyymmdd, \
+                substr(date, 1, 10) AS lastmod \
+         FROM main_news_data \
+         WHERE news IS NOT NULL AND date IS NOT NULL \
+         ORDER BY date ASC, id ASC",
+    )?;
+
+    let rows: Vec<(i64, String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n",
+    );
+
+    // Home page entry
+    xml.push_str(&format!(
+        "  <url><loc>{}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n",
+        DOMAIN
+    ));
+
+    // Collect date entries (deduplicated) and article entries separately
+    let mut seen_dates: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut date_xml = String::new();
+    let mut article_xml = String::new();
+
+    for (id, yyyymmdd, lastmod) in &rows {
+        if seen_dates.insert(yyyymmdd.clone()) {
+            date_xml.push_str(&format!(
+                "  <url><loc>{}/date/{}</loc><lastmod>{}</lastmod>\
+                 <changefreq>yearly</changefreq><priority>0.8</priority></url>\n",
+                DOMAIN, yyyymmdd, lastmod
+            ));
+        }
+        article_xml.push_str(&format!(
+            "  <url><loc>{}/article/{}?date={}</loc><lastmod>{}</lastmod>\
+             <changefreq>yearly</changefreq><priority>0.6</priority></url>\n",
+            DOMAIN, id, yyyymmdd, lastmod
+        ));
+    }
+
+    xml.push_str(&date_xml);
+    xml.push_str(&article_xml);
+    xml.push_str("</urlset>");
+
+    Ok(xml)
 }
 
 fn query_all_dates() -> SqlResult<Vec<DateResponse>> {
@@ -462,10 +545,16 @@ async fn main() {
     let images = warp::path("images")
         .and(warp::fs::dir("../trends-story/images"));
 
+    let sitemap = warp::path("sitemap.xml")
+        .and(warp::path::end())
+        .and(warp::get())
+        .and_then(get_sitemap);
+
     let routes = latest
         .or(dates)
         .or(date)
         .or(images)
+        .or(sitemap)
         .with(cors)
         .recover(handle_rejection);
 
@@ -477,6 +566,7 @@ async fn main() {
     println!("  GET /dates - Get all available dates in yyyymmdd format");
     println!("  GET /date/<yyyymmdd> - Get all news records from a specific date");
     println!("  GET /images/* - Serve images from ../trends-story/images");
+    println!("  GET /sitemap.xml - Full sitemap (date pages + article pages)");
 
     warp::serve(routes)
         .run(([127, 0, 0, 1], PORT))
