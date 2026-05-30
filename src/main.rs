@@ -86,22 +86,25 @@ async fn get_date(date_param: String) -> Result<impl warp::Reply, warp::Rejectio
 }
 
 async fn get_sitemap(cache: SitemapCache) -> Result<impl warp::Reply, warp::Rejection> {
-    // Check in-memory cache first
-    {
-        let guard = cache.lock().await;
-        if let Some((xml, generated_at)) = guard.as_ref() {
-            if generated_at.elapsed() < SITEMAP_CACHE_TTL {
-                return Ok(warp::reply::with_header(
-                    warp::reply::with_header(xml.clone(), "content-type", "application/xml; charset=utf-8"),
-                    "cache-control",
-                    "public, max-age=86400",
-                ));
-            }
+    // Hold the lock for the entire operation.
+    // This prevents thundering herd: concurrent requests queue on the lock
+    // instead of all spawning expensive DB queries simultaneously.
+    let mut guard = cache.lock().await;
+
+    // Cache hit
+    if let Some((cached_xml, generated_at)) = guard.as_ref() {
+        if generated_at.elapsed() < SITEMAP_CACHE_TTL {
+            let xml = cached_xml.clone();
+            return Ok(warp::reply::with_header(
+                warp::reply::with_header(xml, "content-type", "application/xml; charset=utf-8"),
+                "cache-control",
+                "public, max-age=86400",
+            ));
         }
     }
 
-    // Cache miss or expired: generate from DB (blocking)
-    let xml = match tokio::task::spawn_blocking(query_sitemap_data).await {
+    // Cache miss or expired: generate from DB while holding the lock
+    let new_xml = match tokio::task::spawn_blocking(query_sitemap_data).await {
         Ok(Ok(xml)) => xml,
         Ok(Err(e)) => {
             eprintln!("Sitemap database error: {}", e);
@@ -113,14 +116,10 @@ async fn get_sitemap(cache: SitemapCache) -> Result<impl warp::Reply, warp::Reje
         }
     };
 
-    // Store in cache
-    {
-        let mut guard = cache.lock().await;
-        *guard = Some((xml.clone(), Instant::now()));
-    }
+    *guard = Some((new_xml.clone(), Instant::now()));
 
     Ok(warp::reply::with_header(
-        warp::reply::with_header(xml, "content-type", "application/xml; charset=utf-8"),
+        warp::reply::with_header(new_xml, "content-type", "application/xml; charset=utf-8"),
         "cache-control",
         "public, max-age=86400",
     ))
