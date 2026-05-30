@@ -3,9 +3,17 @@ const DOMAIN: &str = "https://trending.oopus.info";
 const DOMAIN_API: &str = "https://trend-story-api.oopus.info";
 
 use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use rusqlite::{Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use warp::Filter;
+
+// Sitemap is expensive to generate (~7s DB query + XML build).
+// Cache the result for 24 hours to serve subsequent requests instantly.
+type SitemapCache = Arc<Mutex<Option<(String, Instant)>>>;
+const SITEMAP_CACHE_TTL: Duration = Duration::from_secs(86400);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LatestResponse {
@@ -77,23 +85,45 @@ async fn get_date(date_param: String) -> Result<impl warp::Reply, warp::Rejectio
     }
 }
 
-async fn get_sitemap() -> Result<impl warp::Reply, warp::Rejection> {
-    // spawn_blocking: query_sitemap_data 是同步阻塞 DB 操作，不能直接在 async 上下文执行
-    match tokio::task::spawn_blocking(query_sitemap_data).await {
-        Ok(Ok(xml)) => Ok(warp::reply::with_header(
-            warp::reply::with_header(xml, "content-type", "application/xml; charset=utf-8"),
-            "cache-control",
-            "public, max-age=86400",
-        )),
+async fn get_sitemap(cache: SitemapCache) -> Result<impl warp::Reply, warp::Rejection> {
+    // Check in-memory cache first
+    {
+        let guard = cache.lock().await;
+        if let Some((xml, generated_at)) = guard.as_ref() {
+            if generated_at.elapsed() < SITEMAP_CACHE_TTL {
+                return Ok(warp::reply::with_header(
+                    warp::reply::with_header(xml.clone(), "content-type", "application/xml; charset=utf-8"),
+                    "cache-control",
+                    "public, max-age=86400",
+                ));
+            }
+        }
+    }
+
+    // Cache miss or expired: generate from DB (blocking)
+    let xml = match tokio::task::spawn_blocking(query_sitemap_data).await {
+        Ok(Ok(xml)) => xml,
         Ok(Err(e)) => {
             eprintln!("Sitemap database error: {}", e);
-            Err(warp::reject::custom(DatabaseError))
+            return Err(warp::reject::custom(DatabaseError));
         }
         Err(e) => {
             eprintln!("Sitemap spawn_blocking error: {}", e);
-            Err(warp::reject::custom(DatabaseError))
+            return Err(warp::reject::custom(DatabaseError));
         }
+    };
+
+    // Store in cache
+    {
+        let mut guard = cache.lock().await;
+        *guard = Some((xml.clone(), Instant::now()));
     }
+
+    Ok(warp::reply::with_header(
+        warp::reply::with_header(xml, "content-type", "application/xml; charset=utf-8"),
+        "cache-control",
+        "public, max-age=86400",
+    ))
 }
 
 async fn get_dates() -> Result<impl warp::Reply, warp::Rejection> {
@@ -545,9 +575,11 @@ async fn main() {
     let images = warp::path("images")
         .and(warp::fs::dir("../trends-story/images"));
 
+    let sitemap_cache: SitemapCache = Arc::new(Mutex::new(None));
     let sitemap = warp::path("sitemap.xml")
         .and(warp::path::end())
         .and(warp::get())
+        .and(warp::any().map(move || sitemap_cache.clone()))
         .and_then(get_sitemap);
 
     let routes = latest
