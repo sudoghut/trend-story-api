@@ -7,12 +7,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use rusqlite::{Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use warp::Filter;
 
 // Sitemap is expensive to generate (~7s DB query + XML build).
-// Cache the result for 24 hours to serve subsequent requests instantly.
-type SitemapCache = Arc<Mutex<Option<(String, Instant)>>>;
+// RwLock allows concurrent cache reads while serializing generation.
+type SitemapCache = Arc<RwLock<Option<(String, Instant)>>>;
 const SITEMAP_CACHE_TTL: Duration = Duration::from_secs(86400);
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,24 +86,36 @@ async fn get_date(date_param: String) -> Result<impl warp::Reply, warp::Rejectio
 }
 
 async fn get_sitemap(cache: SitemapCache) -> Result<impl warp::Reply, warp::Rejection> {
-    // Hold the lock for the entire operation.
-    // This prevents thundering herd: concurrent requests queue on the lock
-    // instead of all spawning expensive DB queries simultaneously.
-    let mut guard = cache.lock().await;
+    // Fast path: read lock allows fully concurrent cache hits
+    {
+        let guard = cache.read().await;
+        if let Some((xml, generated_at)) = guard.as_ref() {
+            if generated_at.elapsed() < SITEMAP_CACHE_TTL {
+                return Ok(warp::reply::with_header(
+                    warp::reply::with_header(xml.clone(), "content-type", "application/xml; charset=utf-8"),
+                    "cache-control",
+                    "public, max-age=86400",
+                ));
+            }
+        }
+    } // read lock released
 
-    // Cache hit
-    if let Some((cached_xml, generated_at)) = guard.as_ref() {
+    // Slow path: write lock serializes generation (prevents thundering herd)
+    let mut guard = cache.write().await;
+
+    // Double-check: another task may have populated the cache while we
+    // waited for the write lock
+    if let Some((xml, generated_at)) = guard.as_ref() {
         if generated_at.elapsed() < SITEMAP_CACHE_TTL {
-            let xml = cached_xml.clone();
             return Ok(warp::reply::with_header(
-                warp::reply::with_header(xml, "content-type", "application/xml; charset=utf-8"),
+                warp::reply::with_header(xml.clone(), "content-type", "application/xml; charset=utf-8"),
                 "cache-control",
                 "public, max-age=86400",
             ));
         }
     }
 
-    // Cache miss or expired: generate from DB while holding the lock
+    // Generate from DB (write lock held — only one task runs this at a time)
     let new_xml = match tokio::task::spawn_blocking(query_sitemap_data).await {
         Ok(Ok(xml)) => xml,
         Ok(Err(e)) => {
@@ -574,7 +586,7 @@ async fn main() {
     let images = warp::path("images")
         .and(warp::fs::dir("../trends-story/images"));
 
-    let sitemap_cache: SitemapCache = Arc::new(Mutex::new(None));
+    let sitemap_cache: SitemapCache = Arc::new(RwLock::new(None));
     let sitemap = warp::path("sitemap.xml")
         .and(warp::path::end())
         .and(warp::get())
